@@ -85,6 +85,7 @@ A few ideas I’m considering:
   For teaching angular momentum and center‑of‑mass shifts.
 - **Challenge mode**  
   “Can you tune the sliders to reach a 70% success rate?”
+  "Can you successfully bottle flip on Mars?"
 
 These aren’t implemented, but they could be part of the project’s natural evolution.
 
