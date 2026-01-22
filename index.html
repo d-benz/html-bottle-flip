@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Bottle Flip Physics Lab</title>
+
+<style>
+  body {
+    margin: 0;
+    background: #eef7ff;
+    font-family: system-ui, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  canvas {
+    border: 2px solid #333;
+    margin-top: 10px;
+    background: #eef7ff;
+  }
+  #ui {
+    margin-top: 10px;
+    text-align: center;
+  }
+  #controls {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px 20px;
+    margin-top: 8px;
+    max-width: 900px;
+  }
+  .control-group {
+    font-size: 14px;
+  }
+  .control-group input[type="range"] {
+    width: 160px;
+  }
+  #flipButton {
+    padding: 6px 14px;
+    font-size: 16px;
+    cursor: pointer;
+    margin-top: 6px;
+  }
+  #stats {
+    margin-top: 6px;
+  }
+  #notes {
+    margin-top: 14px;
+    max-width: 900px;
+    background: #ffffff;
+    border-radius: 8px;
+    padding: 10px 14px;
+    border: 1px solid #c0d0ff;
+    font-size: 14px;
+  }
+  #notes h3 {
+    margin: 4px 0 6px;
+    font-size: 16px;
+  }
+  #notes ul {
+    margin: 4px 0 4px 18px;
+    padding: 0;
+  }
+</style>
+</head>
+
+<body>
+
+<h2>Bottle Flip Physics Lab</h2>
+
+<canvas id="game" width="800" height="500"></canvas>
+
+<div id="ui">
+  <div id="stats">
+    <strong>Attempts:</strong> <span id="attempts">0</span>
+    &nbsp;&nbsp;
+    <strong>Score:</strong> <span id="successes">0</span>
+    &nbsp;&nbsp;
+    <strong>Rate:</strong> <span id="rate">0%</span>
+  </div>
+
+  <div id="controls">
+
+    <!-- Side-by-side slider + number input -->
+    <div class="control-group">
+      <div><strong>Water level</strong> <span id="waterLabel">33%</span></div>
+      <input type="range" id="waterSlider" min="0" max="1" step="0.01" value="0.33">
+      <input type="number" id="waterInput" min="0" max="1" step="0.01" value="0.33" style="width:60px;">
+    </div>
+
+    <div class="control-group">
+      <div><strong>Grip height</strong> <span id="gripLabel">50%</span></div>
+      <input type="range" id="gripSlider" min="0" max="1" step="0.01" value="0.5">
+      <input type="number" id="gripInput" min="0" max="1" step="0.01" value="0.5" style="width:60px;">
+    </div>
+
+    <div class="control-group">
+      <div><strong>Flip strength</strong> <span id="strengthLabel">1.0×</span></div>
+      <input type="range" id="strengthSlider" min="0.5" max="2" step="0.01" value="1">
+      <input type="number" id="strengthInput" min="0.5" max="2" step="0.01" value="1" style="width:60px;">
+    </div>
+
+    <div class="control-group">
+      <div><strong>Spin strength</strong> <span id="spinLabel">1.0×</span></div>
+      <input type="range" id="spinSlider" min="0.5" max="2" step="0.01" value="1">
+      <input type="number" id="spinInput" min="0.5" max="2" step="0.01" value="1" style="width:60px;">
+    </div>
+
+    <div class="control-group">
+      <div><strong>Release angle</strong> <span id="angleLabel">0°</span></div>
+      <input type="range" id="angleSlider" min="-0.5" max="0.5" step="0.01" value="0">
+      <input type="number" id="angleInput" min="-0.5" max="0.5" step="0.01" value="0" style="width:60px;">
+    </div>
+
+  </div>
+
+  <button id="flipButton">Flip (Space or Click)</button>
+</div>
+
+<div id="notes">
+  <h3>Physics Notes</h3>
+  <ul>
+    <li><strong>Water level:</strong> A partly filled bottle has a lower center of mass and a larger moment of inertia.</li>
+    <li><strong>Grip height:</strong> Higher grip = more torque = more spin.</li>
+    <li><strong>Flip strength:</strong> Stronger flips give more airtime.</li>
+    <li><strong>Spin strength:</strong> Controls how many rotations occur.</li>
+    <li><strong>Release angle:</strong> Small tilt changes rotation–gravity interaction.</li>
+  </ul>
+</div>
+
+<script>
+// ------------------------------------------------------------
+// Canvas + constants
+// ------------------------------------------------------------
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+const WIDTH = canvas.width;
+const HEIGHT = canvas.height;
+const GROUND_Y = HEIGHT - 80;
+
+const BOTTLE_HEIGHT = 180;
+const BOTTLE_WIDTH = 40;
+
+const GRAVITY = 900;
+const DT = 1 / 60;
+
+// Game state
+let attempts = 0;
+let successes = 0;
+let hasFlippedOnce = false;
+let lastSuccess = false;
+let successTimer = 0;   // Popup duration timer
+let scoredThisFlip = false;
+
+// UI references
+const waterSlider = document.getElementById("waterSlider");
+const waterInput = document.getElementById("waterInput");
+const waterLabel = document.getElementById("waterLabel");
+
+const gripSlider = document.getElementById("gripSlider");
+const gripInput = document.getElementById("gripInput");
+const gripLabel = document.getElementById("gripLabel");
+
+const strengthSlider = document.getElementById("strengthSlider");
+const strengthInput = document.getElementById("strengthInput");
+const strengthLabel = document.getElementById("strengthLabel");
+
+const spinSlider = document.getElementById("spinSlider");
+const spinInput = document.getElementById("spinInput");
+const spinLabel = document.getElementById("spinLabel");
+
+const angleSlider = document.getElementById("angleSlider");
+const angleInput = document.getElementById("angleInput");
+const angleLabel = document.getElementById("angleLabel");
+
+const attemptsSpan = document.getElementById("attempts");
+const successesSpan = document.getElementById("successes");
+const rateSpan = document.getElementById("rate");
+const flipButton = document.getElementById("flipButton");
+
+// ------------------------------------------------------------
+// UI update
+// ------------------------------------------------------------
+function updateUI() {
+  attemptsSpan.textContent = attempts;
+  successesSpan.textContent = successes;
+  rateSpan.textContent = attempts > 0 ? Math.round(successes / attempts * 100) + "%" : "0%";
+
+  waterLabel.textContent = Math.round(bottle.waterLevel * 100) + "%";
+  gripLabel.textContent = Math.round(bottle.gripHeight * 100) + "%";
+  strengthLabel.textContent = bottle.flipStrength.toFixed(2) + "×";
+  spinLabel.textContent = bottle.spinStrength.toFixed(2) + "×";
+  angleLabel.textContent = Math.round(bottle.releaseAngle * 180 / Math.PI) + "°";
+}
+
+// ------------------------------------------------------------
+// Dust puff effect
+// ------------------------------------------------------------
+class DustPuff {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.life = 0.4;
+    this.maxLife = 0.4;
+  }
+  update(dt) {
+    this.life -= dt;
+  }
+  draw(ctx) {
+    const t = this.life / this.maxLife;
+    ctx.globalAlpha = t;
+    ctx.fillStyle = "#bbbbbb";
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, (1 - t) * 30, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
+let dustPuffs = [];
+
+// ------------------------------------------------------------
+// Bottle class
+// ------------------------------------------------------------
+class Bottle {
+  constructor() {
+    this.resetState();
+    this.waterLevel = 0.33;
+    this.gripHeight = 0.5;
+    this.flipStrength = 1.0;
+    this.spinStrength = 1.0;
+    this.releaseAngle = 0;
+    this.canFlip = true;
+  }
+
+  resetState() {
+    this.x = WIDTH / 2;
+    this.y = GROUND_Y - BOTTLE_HEIGHT / 2;
+    this.vx = 0;
+    this.vy = 0;
+    this.angle = 0;
+    this.angularMomentum = 0;
+    this.landed = true;
+    this.failed = false;
+    this.justReset = true;
+  }
+
+  setWaterLevel(level) {
+    this.waterLevel = Math.max(0, Math.min(1, level));
+  }
+
+  momentOfInertia() {
+    const baseI = 1;
+    const spread = Math.abs(Math.sin(this.angle));
+    const waterI = 3 * this.waterLevel * (1 + 1.5 * spread);
+    return baseI + waterI;
+  }
+
+  flip() {
+    if (!this.canFlip) return;
+    if (!this.landed) return;
+
+    this.canFlip = false;
+    this.landed = false;
+    this.failed = false;
+    this.justReset = false;
+	scoredThisFlip = false;
+
+    this.angle = this.releaseAngle;
+    this.x = WIDTH / 2;
+    this.y = GROUND_Y - BOTTLE_HEIGHT * 0.8;
+
+    this.vx = 40;
+    this.vy = -550 * this.flipStrength;
+
+    const baseL = 18;
+    const gripFactor = 0.5 + this.gripHeight;
+    const fillFactor = 0.6 + 0.8 * (1 - Math.abs(this.waterLevel - 0.33));
+
+    this.angularMomentum = baseL * fillFactor * gripFactor * this.spinStrength;
+  }
+
+  // Determine which corner hits the ground first
+  getLandingContact() {
+    const cosA = Math.cos(this.angle);
+    const sinA = Math.sin(this.angle);
+
+    const hh = BOTTLE_HEIGHT / 2;
+    const hw = BOTTLE_WIDTH / 2;
+
+    const corners = [
+      { name: "topLeft",     x: -hw, y: -hh },
+      { name: "topRight",    x:  hw, y: -hh },
+      { name: "bottomRight", x:  hw, y:  hh },
+      { name: "bottomLeft",  x: -hw, y:  hh }
+    ];
+
+    let lowest = { name: null, y: -Infinity };
+
+    for (const c of corners) {
+      const wy = this.y + c.x * sinA + c.y * cosA;
+      if (wy > lowest.y) lowest = { name: c.name, y: wy };
+    }
+
+    return lowest.name;
+  }
+
+  isBottomSuccess() {
+    if (!this.landed) return false;
+
+    const contact = this.getLandingContact();
+    if (contact !== "bottomLeft" && contact !== "bottomRight") return false;
+
+    let a = this.angle % (2 * Math.PI);
+    if (a < 0) a += 2 * Math.PI;
+
+    return Math.abs(a) < 0.18;
+  }
+
+  isTopSuccess() {
+    if (!this.landed) return false;
+
+    const contact = this.getLandingContact();
+    if (contact !== "topLeft" && contact !== "topRight") return false;
+
+    let a = this.angle % (2 * Math.PI);
+    if (a < 0) a += 2 * Math.PI;
+
+    return Math.abs(a - Math.PI) < 0.18;
+  }
+
+  isAnySuccess() {
+    return this.isBottomSuccess() || this.isTopSuccess();
+  }
+
+  update(dt) {
+    if (this.landed) return;
+
+    // Basic physics
+    this.vy += GRAVITY * dt;
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+
+    // Rotation
+    const I = this.momentOfInertia();
+    const omega = this.angularMomentum / I;
+    this.angle += omega * dt;
+
+    // Compute rotated corners
+    const cosA = Math.cos(this.angle);
+    const sinA = Math.sin(this.angle);
+
+    const hh = BOTTLE_HEIGHT / 2;
+    const hw = BOTTLE_WIDTH / 2;
+
+    const corners = [
+      { x: -hw, y: -hh },
+      { x:  hw, y: -hh },
+      { x:  hw, y:  hh },
+      { x: -hw, y:  hh }
+    ];
+
+    let lowestY = -Infinity;
+    for (const c of corners) {
+      const wy = this.y + c.x * sinA + c.y * cosA;
+      if (wy > lowestY) lowestY = wy;
+    }
+
+    // Ground collision
+    if (lowestY >= GROUND_Y) {
+      const dy = lowestY - GROUND_Y;
+      this.y -= dy;
+
+      if (Math.abs(this.vy) > 200) {
+        dustPuffs.push(new DustPuff(this.x, GROUND_Y));
+      }
+
+      this.vy *= -0.15;
+      this.angularMomentum *= 0.92;
+	  
+	  const settleSpeed = Math.abs(this.vy) + Math.abs(omega);
+	  // If it's a good landing, allow gentle wobble to settle upright
+	  if (this.isAnySuccess()) {
+		if (settleSpeed < 40) {
+			this.angle += Math.sin(performance.now() * 0.02) * 0.015;
+			this.angularMomentum *= 0.85;
+			this.vy *= 0.5;
+		}
+	  }
+	  // If it's NOT a good landing, let physics tip it naturally
+	  // (no wobble correction)
+
+      if (Math.abs(this.vy) < 12 && Math.abs(omega) < 0.25) {
+        this.vy = 0;
+        this.angularMomentum = 0;
+        this.landed = true;
+
+        if (!this.isAnySuccess()) {
+          this.failed = true;
+        }
+
+        setTimeout(() => {
+          this.resetState();
+          this.canFlip = true;
+		  scoredThisFlip = false;
+        }, 600);
+      }
+    }
+
+    if (this.x < 60) this.x = 60;
+    if (this.x > WIDTH - 60) this.x = WIDTH - 60;
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.angle);
+
+    const w = BOTTLE_WIDTH;
+    const h = BOTTLE_HEIGHT;
+    const r = 10;
+
+    // Bottle body
+    ctx.fillStyle = "#dfe7ff";
+    ctx.strokeStyle = "#4a4f70";
+    ctx.lineWidth = 3;
+
+    ctx.beginPath();
+    ctx.moveTo(-w/2 + r, -h/2);
+    ctx.lineTo(w/2 - r, -h/2);
+    ctx.quadraticCurveTo(w/2, -h/2, w/2, -h/2 + r);
+    ctx.lineTo(w/2, h/2 - r);
+    ctx.quadraticCurveTo(w/2, h/2, w/2 - r, h/2);
+    ctx.lineTo(-w/2 + r, h/2);
+    ctx.quadraticCurveTo(-w/2, h/2, -w/2, h/2 - r);
+    ctx.lineTo(-w/2, -h/2 + r);
+    ctx.quadraticCurveTo(-w/2, -h/2, -w/2 + r, -h/2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Cap
+    ctx.fillStyle = "#b0b7d0";
+    ctx.fillRect(-w * 0.25, -h/2 - 12, w * 0.5, 12);
+
+    ctx.fillStyle = "#2a5fbf";
+    ctx.fillRect(-w * 0.2, -h/2 - 18, w * 0.4, 6);
+
+    // Water fill
+    if (this.waterLevel > 0) {
+      const waterHeight = h * this.waterLevel * 0.8;
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(-w/2 + 4, h/2 - waterHeight, w - 8, waterHeight);
+      ctx.clip();
+
+      const grad = ctx.createLinearGradient(0, h/2, 0, -h/2);
+      grad.addColorStop(0, "#007fdc");
+      grad.addColorStop(1, "#5fd0ff");
+
+      ctx.fillStyle = grad;
+      ctx.fillRect(-w/2 + 4, -h/2, w - 8, h);
+      ctx.restore();
+
+      ctx.strokeStyle = "#005a9c";
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(-w/2 + 4, h/2 - waterHeight, w - 8, waterHeight);
+    }
+
+    // Grip marker
+    const gripY = h/2 - this.gripHeight * h;
+    ctx.fillStyle = "#ff7043";
+    ctx.beginPath();
+    ctx.arc(w/2 + 6, gripY, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+}
+// ------------------------------------------------------------
+// Drawing Helpers
+// ------------------------------------------------------------
+function drawGround() {
+  ctx.fillStyle = "#c89b5b";
+  ctx.fillRect(0, GROUND_Y, WIDTH, HEIGHT - GROUND_Y);
+
+  ctx.strokeStyle = "#000";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(0, GROUND_Y);
+  ctx.lineTo(WIDTH, GROUND_Y);
+  ctx.stroke();
+}
+
+function drawShadow() {
+  const scale = 1 + Math.min(0.4, Math.abs(bottle.vy) / 600);
+
+  ctx.save();
+  ctx.translate(bottle.x, GROUND_Y + 2);
+  ctx.scale(scale, 1);
+
+  ctx.fillStyle = "rgba(0,0,0,0.25)";
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 40, 10, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+}
+// ------------------------------------------------------------
+// Popups
+// ------------------------------------------------------------
+function drawSuccessPopup() {
+  const msg = "PERFECT LANDING!";
+  ctx.font = "32px system-ui";
+  const w = ctx.measureText(msg).width + 40;
+
+  ctx.fillStyle = "rgba(255,255,255,0.95)";
+  ctx.fillRect(WIDTH/2 - w/2, 80, w, 60);
+
+  ctx.strokeStyle = "#00aa00";
+  ctx.lineWidth = 4;
+  ctx.strokeRect(WIDTH/2 - w/2, 80, w, 60);
+
+  ctx.fillStyle = "#00aa00";
+  ctx.fillText(msg, WIDTH/2 - w/2 + 20, 118);
+}
+
+function drawBonusPopup() {
+  const msg = "INCREDIBLE! CAP LANDING!";
+  ctx.font = "32px system-ui";
+  const w = ctx.measureText(msg).width + 40;
+
+  ctx.fillStyle = "rgba(255,255,255,0.95)";
+  ctx.fillRect(WIDTH/2 - w/2, 80, w, 60);
+
+  ctx.strokeStyle = "#0055ff";
+  ctx.lineWidth = 4;
+  ctx.strokeRect(WIDTH/2 - w/2, 80, w, 60);
+
+  ctx.fillStyle = "#0055ff";
+  ctx.fillText(msg, WIDTH/2 - w/2 + 20, 118);
+}
+
+function drawFailPopup() {
+  const msg = "Try Again!";
+  ctx.font = "32px system-ui";
+  const w = ctx.measureText(msg).width + 40;
+
+  ctx.fillStyle = "rgba(255,255,255,0.95)";
+  ctx.fillRect(WIDTH/2 - w/2, 80, w, 60);
+
+  ctx.strokeStyle = "#aa0000";
+  ctx.lineWidth = 4;
+  ctx.strokeRect(WIDTH/2 - w/2, 80, w, 60);
+
+  ctx.fillStyle = "#aa0000";
+  ctx.fillText(msg, WIDTH/2 - w/2 + 20, 118);
+}
+// ------------------------------------------------------------
+// Main Loop
+// ------------------------------------------------------------
+const bottle = new Bottle();
+
+function loop() {
+  bottle.update(DT);
+
+  // Dust puffs
+  dustPuffs = dustPuffs.filter(p => p.life > 0);
+  dustPuffs.forEach(p => p.update(DT));
+
+  // Success popup timer
+  successTimer = Math.max(0, successTimer - DT);
+
+  // Scoring logic
+  const currentSuccess = bottle.isAnySuccess();
+
+  if (!scoredThisFlip && hasFlippedOnce && !bottle.justReset) {
+    if (bottle.isBottomSuccess()) {
+      successes++;
+	  scoredThisFlip = true;
+      successTimer = 0.8;
+      updateUI();
+    } else if (bottle.isTopSuccess()) {
+      successes += 2;
+	  scoredThisFlip = true;
+      successTimer = 0.8;
+      updateUI();
+    }
+  }
+
+  lastSuccess = currentSuccess;
+
+  // Draw frame
+  ctx.clearRect(0, 0, WIDTH, HEIGHT);
+
+  drawGround();
+  drawShadow();
+  bottle.draw(ctx);
+  dustPuffs.forEach(p => p.draw(ctx));
+
+  // Popups
+  if (successTimer > 0 && !bottle.justReset) {
+    if (bottle.isBottomSuccess() && hasFlippedOnce) {
+      drawSuccessPopup();
+    } else if (bottle.isTopSuccess() && hasFlippedOnce) {
+      drawBonusPopup();
+    }
+  } else if (!bottle.justReset && bottle.failed && hasFlippedOnce) {
+    drawFailPopup();
+  }
+
+  requestAnimationFrame(loop);
+}
+// ------------------------------------------------------------
+// Event Listeners
+// ------------------------------------------------------------
+
+// WATER
+waterSlider.addEventListener("input", () => {
+  const v = parseFloat(waterSlider.value);
+  bottle.setWaterLevel(v);
+  waterInput.value = v.toFixed(2);
+  updateUI();
+});
+
+waterInput.addEventListener("input", () => {
+  let v = parseFloat(waterInput.value);
+  if (isNaN(v)) return;
+  v = Math.max(0, Math.min(1, v));
+  waterSlider.value = v;
+  bottle.setWaterLevel(v);
+  updateUI();
+});
+
+// GRIP
+gripSlider.addEventListener("input", () => {
+  const v = parseFloat(gripSlider.value);
+  bottle.gripHeight = v;
+  gripInput.value = v.toFixed(2);
+  updateUI();
+});
+
+gripInput.addEventListener("input", () => {
+  let v = parseFloat(gripInput.value);
+  if (isNaN(v)) return;
+  v = Math.max(0, Math.min(1, v));
+  gripSlider.value = v;
+  bottle.gripHeight = v;
+  updateUI();
+});
+
+// FLIP STRENGTH
+strengthSlider.addEventListener("input", () => {
+  const v = parseFloat(strengthSlider.value);
+  bottle.flipStrength = v;
+  strengthInput.value = v.toFixed(2);
+  updateUI();
+});
+
+strengthInput.addEventListener("input", () => {
+  let v = parseFloat(strengthInput.value);
+  if (isNaN(v)) return;
+  v = Math.max(0.5, Math.min(2, v));
+  strengthSlider.value = v;
+  bottle.flipStrength = v;
+  updateUI();
+});
+
+// SPIN
+spinSlider.addEventListener("input", () => {
+  const v = parseFloat(spinSlider.value);
+  bottle.spinStrength = v;
+  spinInput.value = v.toFixed(2);
+  updateUI();
+});
+
+spinInput.addEventListener("input", () => {
+  let v = parseFloat(spinInput.value);
+  if (isNaN(v)) return;
+  v = Math.max(0.5, Math.min(2, v));
+  spinSlider.value = v;
+  bottle.spinStrength = v;
+  updateUI();
+});
+
+// ANGLE
+angleSlider.addEventListener("input", () => {
+  const v = parseFloat(angleSlider.value);
+  bottle.releaseAngle = v;
+  angleInput.value = v.toFixed(2);
+  updateUI();
+});
+
+angleInput.addEventListener("input", () => {
+  let v = parseFloat(angleInput.value);
+  if (isNaN(v)) return;
+  v = Math.max(-0.5, Math.min(0.5, v));
+  angleSlider.value = v;
+  bottle.releaseAngle = v;
+  updateUI();
+});
+
+// FLIP BUTTON + SPACE
+flipButton.addEventListener("click", () => {
+  attempts++;
+  hasFlippedOnce = true;
+  bottle.flip();
+  updateUI();
+});
+
+window.addEventListener("keydown", e => {
+  if (e.code === "Space") {
+    e.preventDefault();
+    attempts++;
+    hasFlippedOnce = true;
+    bottle.flip();
+    updateUI();
+  }
+});
+
+/// Start
+updateUI();
+loop();
+</script>
+</body>
+</html>
