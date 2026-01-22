@@ -60,7 +60,7 @@ It’s meant to be:
 
 ## 🧪 Try it
 Open the lab directly in your browser:  
-https://d-benz.github.io/bottle-flip-lab/
+https://d-benz.github.io/html-bottle-flip/
 
 Or download the file and run it offline — it works anywhere  
 (although my testing was done on Google Chrome).
